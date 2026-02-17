@@ -810,8 +810,8 @@ export default function AuraStudio() {
 
 
   const generateAura = async () => {
-    // Allow generation if promptInput has content OR editablePrompt has content
-    if (!promptInput.trim() && !editablePrompt.trim()) return;
+    // Require user input from the bottom bar
+    if (!promptInput.trim()) return;
     
     setAiLoading(true);
     setAiMessage("The Alchemist is designing particle physics...");
@@ -1000,7 +1000,7 @@ export default function AuraStudio() {
                 onClick={() => {
                   generateAura();
                 }}
-                disabled={(!promptInput.trim() && !editablePrompt.trim()) || aiLoading}
+                disabled={!promptInput.trim() || aiLoading}
                 className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-all border border-purple-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Generate with Custom Prompt

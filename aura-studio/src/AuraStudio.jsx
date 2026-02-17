@@ -683,7 +683,7 @@ class Particle {
 
 
 // Get the default system prompt template
-const getDefaultSystemPrompt = (userPrompt) => `You are a JSON-only particle configuration generator for a Canvas 2D aura engine. Output valid JSON only — no markdown, no backticks, no commentary.
+const getDefaultSystemPrompt = () => `You are a JSON-only particle configuration generator for a Canvas 2D aura engine. Output valid JSON only — no markdown, no backticks, no commentary.
 
 === ENGINE SPEC ===
 
@@ -722,9 +722,7 @@ User: "pokemon aura" (generic franchise — multiple different characters)
 
 === TASK ===
 
-Based on the spec and examples above, generate a particle configuration for:
-
-"${userPrompt}"
+Based on the spec and examples above, generate a particle configuration for the user's request (provided at the end of this prompt).
 
 How to interpret the request:
 - Power/energy/effect words ("super saiyan", "fire aura", "ice storm") → visual aura effect with themed particles. Use 2-3 entities with mixed styles. ALL entities must use colors that match the theme — e.g. fire = reds/oranges/yellows only, ice = blues/whites/cyans only. NEVER add white, gray, or off-theme colored smoke/glow/orbs to an effect aura.
@@ -754,7 +752,7 @@ export default function AuraStudio() {
   const [customAuraConfig, setCustomAuraConfig] = useState(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(384); // Default: 384px (w-96)
-  const [editablePrompt, setEditablePrompt] = useState(() => getDefaultSystemPrompt(""));
+  const [editablePrompt, setEditablePrompt] = useState(() => getDefaultSystemPrompt());
 
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
@@ -990,7 +988,7 @@ export default function AuraStudio() {
             <div className="mt-3 flex gap-2">
               <button
                 onClick={() => {
-                  setEditablePrompt(getDefaultSystemPrompt(promptInput || ""));
+                  setEditablePrompt(getDefaultSystemPrompt());
                 }}
                 className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-all border border-white/10"
               >

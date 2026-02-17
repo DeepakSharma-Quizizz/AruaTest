@@ -682,34 +682,8 @@ class Particle {
 }
 
 
-export default function AuraStudio() {
-  const [activeAura, setActiveAura] = useState(AURA_TYPES.NONE);
-  const [avatar, setAvatar] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiMessage, setAiMessage] = useState("");
-  const [promptInput, setPromptInput] = useState("");
-  const [customAuraConfig, setCustomAuraConfig] = useState(null);
-
-  const canvasRef = useRef(null);
-  const animationRef = useRef(null);
-  const particlesRef = useRef([]);
-  const fileInputRef = useRef(null);
-
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => setAvatar(e.target.result);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const generateAura = async () => {
-    if (!promptInput.trim()) return;
-    setAiLoading(true);
-    setAiMessage("The Alchemist is designing particle physics...");
-
-    const systemPrompt = `You are a JSON-only particle configuration generator for a Canvas 2D aura engine. Output valid JSON only — no markdown, no backticks, no commentary.
+// Get the default system prompt template
+const getDefaultSystemPrompt = (userPrompt) => `You are a JSON-only particle configuration generator for a Canvas 2D aura engine. Output valid JSON only — no markdown, no backticks, no commentary.
 
 === ENGINE SPEC ===
 
@@ -750,7 +724,7 @@ User: "pokemon aura" (generic franchise — multiple different characters)
 
 Based on the spec and examples above, generate a particle configuration for:
 
-"${promptInput}"
+"${userPrompt}"
 
 How to interpret the request:
 - Power/energy/effect words ("super saiyan", "fire aura", "ice storm") → visual aura effect with themed particles. Use 2-3 entities with mixed styles. ALL entities must use colors that match the theme — e.g. fire = reds/oranges/yellows only, ice = blues/whites/cyans only. NEVER add white, gray, or off-theme colored smoke/glow/orbs to an effect aura.
@@ -770,6 +744,151 @@ Constraints:
 - Every entity must have at least 3 shapes so it looks like something recognizable.
 - Valid JSON with commas between all array elements.
 - Shape fill colors must NEVER be white (#ffffff), gray (#888, #aaa, #ccc, etc.), or any neutral color unless the theme specifically calls for it (e.g. "snow", "ghost"). Always use saturated, theme-appropriate colors.`;
+
+export default function AuraStudio() {
+  const [activeAura, setActiveAura] = useState(AURA_TYPES.NONE);
+  const [avatar, setAvatar] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMessage, setAiMessage] = useState("");
+  const [promptInput, setPromptInput] = useState("");
+  const [customAuraConfig, setCustomAuraConfig] = useState(null);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(384); // Default: 384px (w-96)
+  const [editablePrompt, setEditablePrompt] = useState(() => getDefaultSystemPrompt(""));
+
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+  const particlesRef = useRef([]);
+  const fileInputRef = useRef(null);
+  const isResizingRef = useRef(false);
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => setAvatar(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Sidebar resize handlers
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current) return;
+      
+      const newWidth = window.innerWidth - e.clientX;
+      // Constrain width between 300px and 80% of screen width
+      const minWidth = 300;
+      const maxWidth = window.innerWidth * 0.8;
+      setSidebarWidth(Math.max(minWidth, Math.min(maxWidth, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
+
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isResizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  // Helper function to check if prompt contains a user request
+  const hasUserRequestInPrompt = useCallback((prompt) => {
+    if (!prompt.includes('=== TASK ===')) return false;
+    
+    // Check if there's a user prompt in quotes after TASK section
+    const taskSection = prompt.match(/=== TASK ===([\s\S]*?)(?=== |$)/);
+    if (taskSection && taskSection[1]) {
+      // Look for quoted text that's not empty
+      const quotedMatch = taskSection[1].match(/["']([^"']{2,})["']/);
+      if (quotedMatch && quotedMatch[1].trim()) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  // Helper function to update user prompt in TASK section
+  const updateUserPromptInTask = useCallback((prompt, userPrompt) => {
+    if (!userPrompt.trim()) {
+      return prompt;
+    }
+    
+    // If TASK section exists, try to insert/replace there
+    if (prompt.includes('=== TASK ===')) {
+      // Try to find and replace the user prompt in quotes after TASK section
+      // This handles various formats: "userPrompt", 'userPrompt', or just userPrompt
+      const patterns = [
+        /(=== TASK ===[\s\S]*?["'])([^"']+)(["'])/,  // Matches "userPrompt" or 'userPrompt'
+        /(=== TASK ===[\s\S]*?")([^"]+)(")/,         // Matches "userPrompt"
+        /(=== TASK ===[\s\S]*?generate[^:]*:\s*["']?)([^"'\n]+)(["']?)/i, // Matches after "generate...:"
+      ];
+      
+      for (const pattern of patterns) {
+        if (pattern.test(prompt)) {
+          return prompt.replace(pattern, `$1${userPrompt}$3`);
+        }
+      }
+      
+      // If no pattern matches, try to append the user prompt after TASK section
+      const taskIndex = prompt.indexOf('=== TASK ===');
+      if (taskIndex !== -1) {
+        const afterTask = prompt.substring(taskIndex);
+        if (!afterTask.includes(`"${userPrompt}"`) && !afterTask.includes(`'${userPrompt}'`)) {
+          // Find the end of TASK section and add user prompt if not found
+          const lines = afterTask.split('\n');
+          let insertIndex = lines.findIndex(line => line.trim().startsWith('"') || line.trim().startsWith("'"));
+          if (insertIndex === -1) {
+            insertIndex = lines.length;
+          }
+          lines[insertIndex] = `"${userPrompt}"`;
+          return prompt.substring(0, taskIndex) + lines.join('\n');
+        }
+      }
+    } else {
+      // If TASK section doesn't exist, append user input at the end
+      return `${prompt}\n\nUser request: "${userPrompt}"`;
+    }
+    
+    return prompt;
+  }, []);
+
+  // Update editable prompt when promptInput changes
+  useEffect(() => {
+    if (promptInput.trim()) {
+      setEditablePrompt(prev => updateUserPromptInTask(prev, promptInput));
+    }
+  }, [promptInput, updateUserPromptInTask]);
+
+  const generateAura = async () => {
+    // Allow generation if promptInput has content OR editable prompt has a user request
+    const hasInput = promptInput.trim() || hasUserRequestInPrompt(editablePrompt);
+    if (!hasInput) return;
+    
+    setAiLoading(true);
+    setAiMessage("The Alchemist is designing particle physics...");
+
+    // Use the editable prompt and ensure it has the current user input (if provided)
+    let systemPrompt = editablePrompt;
+    if (promptInput.trim()) {
+      systemPrompt = updateUserPromptInTask(editablePrompt, promptInput);
+    }
 
     try {
       const text = await callLLMText(systemPrompt);
@@ -894,6 +1013,66 @@ Constraints:
         }}
       />
 
+      {/* Side Prompt Editor Panel */}
+      {showPromptEditor && (
+        <div 
+          className="absolute right-0 top-0 bottom-0 bg-black/95 border-l border-white/10 z-50 flex flex-col backdrop-blur-sm"
+          style={{ width: `${sidebarWidth}px` }}
+        >
+          {/* Resize Handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-purple-500/50 transition-colors z-10 group"
+          >
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-16 bg-white/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+          
+          <div className="flex items-center justify-between p-4 border-b border-white/10">
+            <h3 className="text-sm font-semibold text-gray-300">Edit Prompt</h3>
+            <button
+              onClick={() => setShowPromptEditor(false)}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-gray-600 hover:text-white hover:bg-white/10 transition-all"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden flex flex-col p-4">
+            <div className="mb-2 text-xs text-gray-500 space-y-1">
+              <p className="font-medium text-gray-400">How it works:</p>
+              <p>• Editing here <strong>replaces the entire prompt</strong> sent to AI</p>
+              <p>• User input from bottom box auto-updates in the TASK section</p>
+              <p>• Click "Generate" to use your custom prompt</p>
+            </div>
+            <textarea
+              value={editablePrompt}
+              onChange={(e) => setEditablePrompt(e.target.value)}
+              className="flex-1 w-full bg-white/5 border border-white/10 rounded-lg p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-purple-500/50 focus:bg-white/8 resize-none overflow-auto"
+              placeholder="Edit the system prompt..."
+              spellCheck={false}
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setEditablePrompt(getDefaultSystemPrompt(promptInput || ""));
+                }}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-all border border-white/10"
+              >
+                Reset to Default
+              </button>
+              <button
+                onClick={() => {
+                  generateAura();
+                }}
+                disabled={(!promptInput.trim() && !hasUserRequestInPrompt(editablePrompt)) || aiLoading}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-all border border-purple-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Generate with Custom Prompt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <header className="relative z-30 flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2.5">
@@ -905,14 +1084,26 @@ Constraints:
           </span>
         </div>
 
-        {/* Upload avatar button */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 transition-all"
-        >
-          <ImagePlus size={14} />
-          {avatar ? 'Change' : 'Upload'}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Edit Prompt Toggle */}
+          <button
+            onClick={() => setShowPromptEditor(!showPromptEditor)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+            title="Edit prompt"
+          >
+            <Wand2 size={14} />
+            {showPromptEditor ? 'Hide' : 'Edit'} Prompt
+          </button>
+
+          {/* Upload avatar button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+          >
+            <ImagePlus size={14} />
+            {avatar ? 'Change' : 'Upload'}
+          </button>
+        </div>
       </header>
 
       {/* Main stage — takes remaining space */}

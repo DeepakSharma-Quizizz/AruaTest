@@ -808,87 +808,24 @@ export default function AuraStudio() {
     document.body.style.userSelect = 'none';
   };
 
-  // Helper function to check if prompt contains a user request
-  const hasUserRequestInPrompt = useCallback((prompt) => {
-    if (!prompt.includes('=== TASK ===')) return false;
-    
-    // Check if there's a user prompt in quotes after TASK section
-    const taskSection = prompt.match(/=== TASK ===([\s\S]*?)(?=== |$)/);
-    if (taskSection && taskSection[1]) {
-      // Look for quoted text that's not empty
-      const quotedMatch = taskSection[1].match(/["']([^"']{2,})["']/);
-      if (quotedMatch && quotedMatch[1].trim()) {
-        return true;
-      }
-    }
-    return false;
-  }, []);
-
-  // Helper function to update user prompt in TASK section
-  const updateUserPromptInTask = useCallback((prompt, userPrompt) => {
-    if (!userPrompt.trim()) {
-      return prompt;
-    }
-    
-    // If TASK section exists, try to insert/replace there
-    if (prompt.includes('=== TASK ===')) {
-      // Try to find and replace the user prompt in quotes after TASK section
-      // This handles various formats: "userPrompt", 'userPrompt', or just userPrompt
-      const patterns = [
-        /(=== TASK ===[\s\S]*?["'])([^"']+)(["'])/,  // Matches "userPrompt" or 'userPrompt'
-        /(=== TASK ===[\s\S]*?")([^"]+)(")/,         // Matches "userPrompt"
-        /(=== TASK ===[\s\S]*?generate[^:]*:\s*["']?)([^"'\n]+)(["']?)/i, // Matches after "generate...:"
-      ];
-      
-      for (const pattern of patterns) {
-        if (pattern.test(prompt)) {
-          return prompt.replace(pattern, `$1${userPrompt}$3`);
-        }
-      }
-      
-      // If no pattern matches, try to append the user prompt after TASK section
-      const taskIndex = prompt.indexOf('=== TASK ===');
-      if (taskIndex !== -1) {
-        const afterTask = prompt.substring(taskIndex);
-        if (!afterTask.includes(`"${userPrompt}"`) && !afterTask.includes(`'${userPrompt}'`)) {
-          // Find the end of TASK section and add user prompt if not found
-          const lines = afterTask.split('\n');
-          let insertIndex = lines.findIndex(line => line.trim().startsWith('"') || line.trim().startsWith("'"));
-          if (insertIndex === -1) {
-            insertIndex = lines.length;
-          }
-          lines[insertIndex] = `"${userPrompt}"`;
-          return prompt.substring(0, taskIndex) + lines.join('\n');
-        }
-      }
-    } else {
-      // If TASK section doesn't exist, append user input at the end
-      return `${prompt}\n\nUser request: "${userPrompt}"`;
-    }
-    
-    return prompt;
-  }, []);
-
-  // Update editable prompt when promptInput changes
-  useEffect(() => {
-    if (promptInput.trim()) {
-      setEditablePrompt(prev => updateUserPromptInTask(prev, promptInput));
-    }
-  }, [promptInput, updateUserPromptInTask]);
 
   const generateAura = async () => {
-    // Allow generation if promptInput has content OR editable prompt has a user request
-    const hasInput = promptInput.trim() || hasUserRequestInPrompt(editablePrompt);
-    if (!hasInput) return;
+    // Allow generation if promptInput has content OR editablePrompt has content
+    if (!promptInput.trim() && !editablePrompt.trim()) return;
     
     setAiLoading(true);
     setAiMessage("The Alchemist is designing particle physics...");
 
-    // Use the editable prompt and ensure it has the current user input (if provided)
+    // Use the admin's editable prompt as-is, and append user input at the end if provided
     let systemPrompt = editablePrompt;
     if (promptInput.trim()) {
-      systemPrompt = updateUserPromptInTask(editablePrompt, promptInput);
+      systemPrompt = `${editablePrompt}\n\nUser request: "${promptInput.trim()}"`;
     }
+
+    // Log the complete prompt to console for debugging
+    console.log('=== FULL PROMPT BEING SENT TO AI ===');
+    console.log(systemPrompt);
+    console.log('=== END OF PROMPT ===');
 
     try {
       const text = await callLLMText(systemPrompt);
@@ -1063,7 +1000,7 @@ export default function AuraStudio() {
                 onClick={() => {
                   generateAura();
                 }}
-                disabled={(!promptInput.trim() && !hasUserRequestInPrompt(editablePrompt)) || aiLoading}
+                disabled={(!promptInput.trim() && !editablePrompt.trim()) || aiLoading}
                 className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 transition-all border border-purple-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Generate with Custom Prompt
